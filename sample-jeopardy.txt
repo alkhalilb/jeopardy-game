@@ -1,0 +1,33 @@
+Science	History	Literature	Geography	Sports	Pop Culture
+Science	200	Known as the Red Planet due to iron oxide on its surface, this is the fourth planet from the Sun.	What is Mars	false
+Science	400	These cellular organelles are called the "powerhouse of the cell" because they produce ATP through cellular respiration.	What is the mitochondria (or mitochondrion)	false
+Science	600	With atomic number 79, this precious metal's chemical symbol comes from its Latin name "aurum."	What is Gold	true
+Science	800	Seismology is the scientific study of these natural phenomena and the seismic waves they generate.	What are earthquakes	false
+Science	1000	Making up about 78% of Earth's atmosphere, this element is essential for protein synthesis in living organisms.	What is Nitrogen	false
+History	200	Drafted by Thomas Jefferson and adopted on July 4, 1776, this document declared independence from Great Britain.	What is the Declaration of Independence	false
+History	400	This Founding Father served as the nation's first President from 1789 to 1797.	Who is George Washington	false
+History	600	On September 2 of this year, Japan formally surrendered aboard the USS Missouri, ending World War II.	What is 1945	false
+History	800	After standing for 28 years as a symbol of the Cold War, this concrete barrier was torn down in November of 1989.	What is the Berlin Wall	false
+History	1000	In 79 AD, Mount Vesuvius erupted and buried this ancient Roman city under volcanic ash, preserving it for nearly 2000 years.	What is Pompeii	false
+Literature	200	This English playwright and poet penned the tragedy of star-crossed lovers Romeo and Juliet.	Who is William Shakespeare	false
+Literature	400	In J.K. Rowling's series, this orphaned wizard is known as "The Boy Who Lived" after surviving the Killing Curse.	Who is Harry Potter	false
+Literature	600	Published in 1949, this dystopian novel by this British author depicts a totalitarian surveillance state in Oceania.	Who is George Orwell	false
+Literature	800	Homer's epic poem chronicles the final year of this 10-year war between the Greeks and Trojans.	What is the Trojan War (accept the Iliad)	false
+Literature	1000	In Tolkien's trilogy, Frodo begins his quest from the Shire in this first volume of the epic fantasy.	What is The Fellowship of the Ring	false
+Geography	200	This European capital, known as the "City of Light," sits on the Seine River.	What is Paris	false
+Geography	400	Covering more than 63 million square miles, this is Earth's largest ocean by both area and volume.	What is the Pacific Ocean	false
+Geography	600	Flowing 4,135 miles through northeastern Africa, this river is traditionally considered the world's longest.	What is the Nile	false
+Geography	800	With over 200 pyramids, this African nation has more ancient pyramids than Egypt.	What is Sudan	false
+Geography	1000	With an area of only 0.17 square miles, this landlocked enclave within Rome is the world's smallest country.	What is Vatican City	false
+Sports	200	Played on grass courts in London each summer, this Grand Slam tournament is the oldest tennis championship.	What is Wimbledon	false
+Sports	400	In basketball, this many players from each team are on the court during regulation play.	What is 5	false
+Sports	600	In 1930, this South American nation hosted and won the inaugural FIFA World Cup tournament.	What is Uruguay	false
+Sports	800	With 28 medals including 23 golds, this American swimmer holds the record for most Olympic medals in history.	Who is Michael Phelps	false
+Sports	1000	In basketball, the diameter of the hoop rim is this many inches, just over twice the diameter of the ball.	What is 18 inches	false
+Pop Culture	200	Originating as a DVD rental service, this streaming platform produces hit series like Stranger Things and The Crown.	What is Netflix	false
+Pop Culture	400	Steve Jobs unveiled this revolutionary touchscreen smartphone at Macworld in January of this year.	What is 2007	false
+Pop Culture	600	Directed by James Cameron and released in 2009, this sci-fi film became the highest-grossing movie of all time.	What is Avatar	false
+Pop Culture	800	Country-pop crossover artist Taylor Swift released her self-titled debut studio album in this year.	What is 2006 (accept Taylor Swift)	false
+Pop Culture	1000	In the Marvel Cinematic Universe, Wakanda is this fictional technologically advanced African nation featured in Black Panther.	What is Wakanda	false
+FINAL JEOPARDY
+U.S. Presidents	Elected in 1796 as the second President, this Founding Father became the first chief executive to reside in the newly completed White House in 1800.	Who is John Adams

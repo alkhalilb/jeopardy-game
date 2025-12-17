@@ -1,0 +1,63 @@
+# JEOPARDY GAME FILE TEMPLATE
+#
+# INSTRUCTIONS:
+# 1. Delete all lines starting with # (these are comments)
+# 2. First line MUST be your category names (3-8 categories) separated by TABS
+# 3. Each question line format: Category [TAB] Value [TAB] Question [TAB] Answer [TAB] isDailyDouble
+# 4. For Daily Doubles, set the last field to "true" (you can have 1-3 daily doubles)
+# 5. For Final Jeopardy (optional), add "FINAL JEOPARDY" on its own line, then: Category [TAB] Question [TAB] Answer
+# 6. Use TAB characters between fields (not spaces or commas)
+# 7. Save as .txt file
+
+# ========== CATEGORIES (Replace with your 3-8 categories) ==========
+# This example shows 6 categories - you can add or remove categories as needed (3-8 total)
+Category 1	Category 2	Category 3	Category 4	Category 5	Category 6
+
+# ========== QUESTIONS (Replace with your questions) ==========
+# Format: Category [TAB] Value [TAB] Question [TAB] Answer [TAB] isDailyDouble
+
+# Category 1 Questions (5 questions: $200, $400, $600, $800, $1000)
+Category 1	200	Your $200 question here	Your answer here	false
+Category 1	400	Your $400 question here	Your answer here	false
+Category 1	600	Your $600 question here	Your answer here	false
+Category 1	800	Your $800 question here	Your answer here	false
+Category 1	1000	Your $1000 question here	Your answer here	false
+
+# Category 2 Questions
+Category 2	200	Your $200 question here	Your answer here	false
+Category 2	400	Your $400 question here	Your answer here	false
+Category 2	600	Your $600 question here	Your answer here	true
+Category 2	800	Your $800 question here	Your answer here	false
+Category 2	1000	Your $1000 question here	Your answer here	false
+
+# Category 3 Questions
+Category 3	200	Your $200 question here	Your answer here	false
+Category 3	400	Your $400 question here	Your answer here	false
+Category 3	600	Your $600 question here	Your answer here	false
+Category 3	800	Your $800 question here	Your answer here	false
+Category 3	1000	Your $1000 question here	Your answer here	false
+
+# Category 4 Questions
+Category 4	200	Your $200 question here	Your answer here	false
+Category 4	400	Your $400 question here	Your answer here	false
+Category 4	600	Your $600 question here	Your answer here	false
+Category 4	800	Your $800 question here	Your answer here	false
+Category 4	1000	Your $1000 question here	Your answer here	false
+
+# Category 5 Questions
+Category 5	200	Your $200 question here	Your answer here	false
+Category 5	400	Your $400 question here	Your answer here	false
+Category 5	600	Your $600 question here	Your answer here	false
+Category 5	800	Your $800 question here	Your answer here	true
+Category 5	1000	Your $1000 question here	Your answer here	false
+
+# Category 6 Questions
+Category 6	200	Your $200 question here	Your answer here	false
+Category 6	400	Your $400 question here	Your answer here	false
+Category 6	600	Your $600 question here	Your answer here	false
+Category 6	800	Your $800 question here	Your answer here	false
+Category 6	1000	Your $1000 question here	Your answer here	false
+
+# ========== FINAL JEOPARDY (Optional - Delete if not using) ==========
+FINAL JEOPARDY
+Final Jeopardy Category	Your Final Jeopardy question here	Your Final Jeopardy answer here
