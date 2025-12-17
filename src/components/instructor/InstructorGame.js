@@ -1,43 +1,43 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, query, where, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { joinGame, leaveGame, onGameUpdate, onGameDeleted, updateGame, deleteGame } from '../../api';
 
 function InstructorGame() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const [game, setGame] = useState(null);
-  const [gameDoc, setGameDoc] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [loading, setLoading] = useState(true);
-  const gameDocRef = useRef(null);
+  const gameIdRef = useRef(gameId);
 
   useEffect(() => {
-    const q = query(collection(db, 'games'), where('gameId', '==', gameId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docData = snapshot.docs[0];
-        setGameDoc(docData.id);
-        gameDocRef.current = docData.id;
-        setGame(docData.data());
-        setLoading(false);
-      }
+    gameIdRef.current = gameId;
+
+    // Join game room for real-time updates
+    joinGame(gameId);
+
+    // Listen for game updates
+    const unsubscribeUpdate = onGameUpdate((gameState) => {
+      setGame(gameState);
+      setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [gameId]);
+    // Listen for game deletion
+    const unsubscribeDelete = onGameDeleted(() => {
+      navigate('/');
+    });
 
-  // Cleanup: Delete game when instructor leaves (only on unmount)
-  useEffect(() => {
     return () => {
-      if (gameDocRef.current) {
-        deleteDoc(doc(db, 'games', gameDocRef.current)).catch(err => {
-          console.error('Error deleting game:', err);
-        });
-      }
+      unsubscribeUpdate();
+      unsubscribeDelete();
+      leaveGame(gameId);
+      // Delete game when instructor leaves
+      deleteGame(gameIdRef.current).catch(err => {
+        console.error('Error deleting game:', err);
+      });
     };
-  }, []); // Empty dependencies - only runs on unmount
+  }, [gameId, navigate]);
 
   const handleQuestionClick = async (question) => {
     if (question.answered) return;
@@ -45,44 +45,38 @@ function InstructorGame() {
     setCurrentQuestion(question);
     setShowAnswer(false);
 
-    // Update Firebase
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       currentQuestion: question,
       buzzedPlayer: null,
       buzzesOpen: false,
-      questionStartTime: new Date(),
-      incorrectTeams: [], // Track teams that got this question wrong
-      dailyDoubleRevealed: false, // For Daily Doubles, start with question hidden
-      dailyDoubleWagers: {}, // Reset wagers
-      dailyDoubleTeam: null // Reset team selection for Daily Double
+      questionStartTime: new Date().toISOString(),
+      incorrectTeams: [],
+      dailyDoubleRevealed: false,
+      dailyDoubleWagers: {},
+      dailyDoubleTeam: null
     });
   };
 
   const handleRevealDailyDouble = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       dailyDoubleRevealed: true
     });
   };
 
   const handleOpenBuzzes = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       buzzesOpen: true
     });
   };
 
   const handleCloseBuzzes = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       buzzesOpen: false
     });
   };
 
   const handleStartFinalJeopardy = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       isFinalJeopardy: true,
       currentQuestion: null,
       buzzedPlayer: null,
@@ -92,18 +86,16 @@ function InstructorGame() {
   };
 
   const handleShowFinalQuestion = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       showFinalQuestion: true
     });
   };
 
   const handleRevealAnswer = async (teamName) => {
-    const gameRef = doc(db, 'games', gameDoc);
     const revealedAnswers = game.finalJeopardyRevealedAnswers || {};
     revealedAnswers[teamName] = true;
 
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       finalJeopardyRevealedAnswers: revealedAnswers
     });
   };
@@ -115,27 +107,23 @@ function InstructorGame() {
       ? (updatedTeams[teamName] || 0) + wager
       : (updatedTeams[teamName] || 0) - wager;
 
-    // Track which teams have been scored and whether they were correct
     const scoredTeams = game.finalJeopardyScored || {};
     scoredTeams[teamName] = correct;
 
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       teams: updatedTeams,
       finalJeopardyScored: scoredTeams
     });
   };
 
   const handleEndFinalJeopardy = async () => {
-    // Calculate winners
     const teams = game.teams;
     const maxScore = Math.max(...Object.values(teams));
     const winners = Object.entries(teams)
       .filter(([_, score]) => score === maxScore)
       .map(([teamName]) => teamName);
 
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       gameEnded: true,
       winners: winners,
       finalScores: teams
@@ -143,30 +131,25 @@ function InstructorGame() {
   };
 
   const handleCorrect = async () => {
-    // Use game.currentQuestion from Firebase, not local currentQuestion state
     const question = game.currentQuestion || currentQuestion;
     if (!question) return;
 
-    // For Daily Doubles, use dailyDoubleTeam; for regular questions, use buzzedPlayer
     const teamName = question.isDailyDouble
       ? game.dailyDoubleTeam
       : game.buzzedPlayer?.team;
 
     if (!teamName) {
-      console.error('No team name found. isDailyDouble:', question.isDailyDouble, 'dailyDoubleTeam:', game.dailyDoubleTeam, 'buzzedPlayer:', game.buzzedPlayer);
+      console.error('No team name found');
       return;
     }
 
     const updatedTeams = { ...game.teams };
 
-    // Use wager amount for daily doubles, otherwise use question value
     let pointValue = question.value;
     if (question.isDailyDouble) {
-      // First check if wagerAmount is on currentQuestion from Firebase
       if (question.wagerAmount) {
         pointValue = question.wagerAmount;
       } else {
-        // Otherwise, get it from dailyDoubleWagers
         const wagers = game.dailyDoubleWagers || {};
         const teamWager = Object.entries(wagers).find(([key]) => key.startsWith(`${teamName}-`));
         if (teamWager) {
@@ -183,8 +166,7 @@ function InstructorGame() {
         : q
     );
 
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       teams: updatedTeams,
       questions: updatedQuestions,
       currentQuestion: null,
@@ -198,30 +180,25 @@ function InstructorGame() {
   };
 
   const handleIncorrect = async () => {
-    // Use game.currentQuestion from Firebase, not local currentQuestion state
     const question = game.currentQuestion || currentQuestion;
     if (!question) return;
 
-    // For Daily Doubles, use dailyDoubleTeam; for regular questions, use buzzedPlayer
     const teamName = question.isDailyDouble
       ? game.dailyDoubleTeam
       : game.buzzedPlayer?.team;
 
     if (!teamName) {
-      console.error('No team name found. isDailyDouble:', question.isDailyDouble, 'dailyDoubleTeam:', game.dailyDoubleTeam, 'buzzedPlayer:', game.buzzedPlayer);
+      console.error('No team name found');
       return;
     }
 
     const updatedTeams = { ...game.teams };
 
-    // Use wager amount for daily doubles, otherwise use question value
     let pointValue = question.value;
     if (question.isDailyDouble) {
-      // First check if wagerAmount is on currentQuestion from Firebase
       if (question.wagerAmount) {
         pointValue = question.wagerAmount;
       } else {
-        // Otherwise, get it from dailyDoubleWagers
         const wagers = game.dailyDoubleWagers || {};
         const teamWager = Object.entries(wagers).find(([key]) => key.startsWith(`${teamName}-`));
         if (teamWager) {
@@ -232,9 +209,6 @@ function InstructorGame() {
 
     updatedTeams[teamName] = (updatedTeams[teamName] || 0) - pointValue;
 
-    const gameRef = doc(db, 'games', gameDoc);
-
-    // For Daily Doubles: close the question, don't reopen buzzes
     if (question.isDailyDouble) {
       const updatedQuestions = game.questions.map(q =>
         q.question === question.question && q.value === question.value
@@ -242,7 +216,7 @@ function InstructorGame() {
           : q
       );
 
-      await updateDoc(gameRef, {
+      await updateGame(gameId, {
         teams: updatedTeams,
         questions: updatedQuestions,
         currentQuestion: null,
@@ -254,17 +228,16 @@ function InstructorGame() {
       setCurrentQuestion(null);
       setShowAnswer(false);
     } else {
-      // For regular questions: track incorrect teams and reopen buzzes
       const incorrectTeams = game.incorrectTeams || [];
       if (!incorrectTeams.includes(teamName)) {
         incorrectTeams.push(teamName);
       }
 
-      await updateDoc(gameRef, {
+      await updateGame(gameId, {
         teams: updatedTeams,
         buzzedPlayer: null,
         incorrectTeams: incorrectTeams,
-        buzzesOpen: true // Reopen buzzes for other teams
+        buzzesOpen: true
       });
     }
   };
@@ -276,8 +249,7 @@ function InstructorGame() {
         : q
     );
 
-    const gameRef = doc(db, 'games', gameDoc);
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       questions: updatedQuestions,
       currentQuestion: null,
       buzzedPlayer: null,
@@ -289,10 +261,14 @@ function InstructorGame() {
   };
 
   const handleLeaveGame = async () => {
-    if (gameDoc) {
-      await deleteDoc(doc(db, 'games', gameDoc));
-    }
+    await deleteGame(gameId);
     navigate('/');
+  };
+
+  const handleSelectDailyDoubleTeam = async (teamName) => {
+    await updateGame(gameId, {
+      dailyDoubleTeam: teamName
+    });
   };
 
   if (loading) {
@@ -303,7 +279,6 @@ function InstructorGame() {
     return <div className="error">Game not found</div>;
   }
 
-  // Show winners screen if game has ended
   if (game.gameEnded) {
     return (
       <div className="game-container">
@@ -313,7 +288,7 @@ function InstructorGame() {
           </h1>
 
           <h2 style={{ fontSize: '3rem', marginBottom: '2rem' }}>
-            🏆 {game.winners.length > 1 ? 'Winners' : 'Winner'} 🏆
+            {game.winners.length > 1 ? 'Winners' : 'Winner'}
           </h2>
 
           <div style={{ fontSize: '2.5rem', marginBottom: '3rem', fontWeight: 'bold' }}>
@@ -353,7 +328,6 @@ function InstructorGame() {
     );
   }
 
-  // Organize questions by category
   const boardQuestions = {};
   game.categories.forEach(cat => {
     boardQuestions[cat] = game.questions.filter(q => q.category === cat);
@@ -570,12 +544,12 @@ function InstructorGame() {
         </div>
       )}
 
-      {currentQuestion && (
+      {game.currentQuestion && (
         <div className="question-display">
-          <div className="question-category">{currentQuestion.category}</div>
-          <div className="question-value">${currentQuestion.value}</div>
+          <div className="question-category">{game.currentQuestion.category}</div>
+          <div className="question-value">${game.currentQuestion.value}</div>
 
-          {currentQuestion.isDailyDouble && !game.dailyDoubleRevealed && (
+          {game.currentQuestion.isDailyDouble && !game.dailyDoubleRevealed && (
             <>
               <div style={{ fontSize: '4rem', color: '#ffcc00', marginBottom: '2rem', textAlign: 'center' }}>
                 DAILY DOUBLE!
@@ -604,12 +578,7 @@ function InstructorGame() {
                       <button
                         key={teamName}
                         className="btn"
-                        onClick={async () => {
-                          const gameRef = doc(db, 'games', gameDoc);
-                          await updateDoc(gameRef, {
-                            dailyDoubleTeam: teamName
-                          });
-                        }}
+                        onClick={() => handleSelectDailyDoubleTeam(teamName)}
                         style={{ padding: '1rem 2rem', fontSize: '1.2rem' }}
                       >
                         {teamName}
@@ -638,21 +607,21 @@ function InstructorGame() {
             </>
           )}
 
-          {currentQuestion.isDailyDouble && (
+          {game.currentQuestion.isDailyDouble && (
             <div style={{ fontSize: '3rem', color: '#ffcc00', marginBottom: '1rem' }}>
               DAILY DOUBLE!
             </div>
           )}
 
-          {(!currentQuestion.isDailyDouble || game.dailyDoubleRevealed) && (
-            <div className="question-text">{currentQuestion.question}</div>
+          {(!game.currentQuestion.isDailyDouble || game.dailyDoubleRevealed) && (
+            <div className="question-text">{game.currentQuestion.question}</div>
           )}
 
           {showAnswer && (
-            <div className="question-answer">Answer: {currentQuestion.answer}</div>
+            <div className="question-answer">Answer: {game.currentQuestion.answer}</div>
           )}
 
-          {!currentQuestion.isDailyDouble && (
+          {!game.currentQuestion.isDailyDouble && (
             <div className="buzz-status">
               <strong>Buzzes: </strong>
               {game.buzzesOpen ? (
@@ -663,22 +632,22 @@ function InstructorGame() {
             </div>
           )}
 
-          {!currentQuestion.isDailyDouble && game.buzzedPlayer && (
+          {!game.currentQuestion.isDailyDouble && game.buzzedPlayer && (
             <div className="buzz-info">
-              <div>🔔 BUZZED IN!</div>
+              <div>BUZZED IN!</div>
               <div className="player-name">{game.buzzedPlayer.name}</div>
               <div className="team-name">Team: {game.buzzedPlayer.team}</div>
             </div>
           )}
 
           <div className="instructor-controls">
-            {currentQuestion.isDailyDouble && !game.dailyDoubleRevealed && (
+            {game.currentQuestion.isDailyDouble && !game.dailyDoubleRevealed && (
               <button className="correct-btn" onClick={handleRevealDailyDouble}>
                 Reveal Question
               </button>
             )}
 
-            {currentQuestion.isDailyDouble && game.dailyDoubleRevealed && (
+            {game.currentQuestion.isDailyDouble && game.dailyDoubleRevealed && (
               <>
                 {!showAnswer && (
                   <button className="close-btn" onClick={() => setShowAnswer(true)}>
@@ -694,7 +663,7 @@ function InstructorGame() {
               </>
             )}
 
-            {!currentQuestion.isDailyDouble && (
+            {!game.currentQuestion.isDailyDouble && (
               <>
                 {!game.buzzesOpen && !game.buzzedPlayer && (
                   <button className="correct-btn" onClick={handleOpenBuzzes}>

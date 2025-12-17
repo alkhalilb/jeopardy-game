@@ -30,3 +30,7 @@ yarn-error.log*
 # IDE
 .idea
 .vscode
+
+# Server
+server/node_modules
+server/.env

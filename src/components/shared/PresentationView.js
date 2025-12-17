@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { joinGame, leaveGame, onGameUpdate, onGameDeleted } from '../../api';
 
 function PresentationView() {
   const { gameId } = useParams();
@@ -9,16 +8,23 @@ function PresentationView() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'games'), where('gameId', '==', gameId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docData = snapshot.docs[0];
-        setGame(docData.data());
-        setLoading(false);
-      }
+    joinGame(gameId);
+
+    const unsubscribeUpdate = onGameUpdate((gameState) => {
+      setGame(gameState);
+      setLoading(false);
     });
 
-    return () => unsubscribe();
+    const unsubscribeDelete = onGameDeleted(() => {
+      setGame(null);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeUpdate();
+      unsubscribeDelete();
+      leaveGame(gameId);
+    };
   }, [gameId]);
 
   if (loading) {
@@ -39,7 +45,7 @@ function PresentationView() {
           </h1>
 
           <h2 style={{ fontSize: '4rem', marginBottom: '3rem' }}>
-            🏆 {game.winners.length > 1 ? 'Winners' : 'Winner'} 🏆
+            {game.winners.length > 1 ? 'Winners' : 'Winner'}
           </h2>
 
           <div style={{ fontSize: '3.5rem', marginBottom: '4rem', fontWeight: 'bold', color: '#ffcc00' }}>
@@ -70,7 +76,7 @@ function PresentationView() {
 
           {game.winners.length === 1 && (
             <div style={{ fontSize: '3rem', marginTop: '3rem', color: '#ffcc00' }}>
-              🎉 Congratulations! 🎉
+              Congratulations!
             </div>
           )}
         </div>
@@ -237,7 +243,7 @@ function PresentationView() {
 
           {!currentQuestion.isDailyDouble && game.buzzedPlayer && (
             <div className="buzz-info">
-              <div>🔔 BUZZED IN!</div>
+              <div>BUZZED IN!</div>
               <div className="player-name">{game.buzzedPlayer.name}</div>
               <div className="team-name">Team: {game.buzzedPlayer.team}</div>
             </div>

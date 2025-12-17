@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { getGame, updateGame } from '../../api';
 
 function StudentLogin() {
   const [name, setName] = useState('');
@@ -24,18 +23,15 @@ function StudentLogin() {
 
     try {
       // Find the game
-      const q = query(collection(db, 'games'), where('gameId', '==', gameId.toUpperCase()));
-      const snapshot = await getDocs(q);
+      const game = await getGame(gameId.toUpperCase());
 
-      if (snapshot.empty) {
+      if (!game) {
         setError('Game not found. Please check the Game ID.');
         setLoading(false);
         return;
       }
 
-      const gameDoc = snapshot.docs[0];
-      const gameData = gameDoc.data();
-      const teams = gameData.teams || {};
+      const teams = game.teams || {};
 
       // Initialize team if it doesn't exist
       if (!teams[teamName]) {
@@ -43,9 +39,7 @@ function StudentLogin() {
       }
 
       // Update game with team
-      await updateDoc(doc(db, 'games', gameDoc.id), {
-        teams
-      });
+      await updateGame(gameId.toUpperCase(), { teams });
 
       // Store player info in sessionStorage
       sessionStorage.setItem('playerName', name);

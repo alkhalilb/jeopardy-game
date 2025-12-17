@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { verifyAdminPassword, deleteAllGames } from '../api';
 
 function Admin() {
   const navigate = useNavigate();
@@ -9,14 +8,22 @@ function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState('');
+  const [storedPassword, setStoredPassword] = useState('');
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    if (password === 'Feinberg123') {
-      setIsAuthenticated(true);
-      setMessage('');
-    } else {
-      setMessage('Incorrect password');
+    try {
+      const isValid = await verifyAdminPassword(password);
+      if (isValid) {
+        setIsAuthenticated(true);
+        setStoredPassword(password);
+        setMessage('');
+      } else {
+        setMessage('Incorrect password');
+        setPassword('');
+      }
+    } catch (error) {
+      setMessage('Error verifying password: ' + error.message);
       setPassword('');
     }
   };
@@ -30,16 +37,8 @@ function Admin() {
     setMessage('Deleting all games...');
 
     try {
-      const gamesCollection = collection(db, 'games');
-      const snapshot = await getDocs(gamesCollection);
-
-      const deletePromises = snapshot.docs.map(document =>
-        deleteDoc(doc(db, 'games', document.id))
-      );
-
-      await Promise.all(deletePromises);
-
-      setMessage(`Successfully deleted ${snapshot.docs.length} game(s)`);
+      const result = await deleteAllGames(storedPassword);
+      setMessage(`Successfully deleted ${result.deletedCount} game(s)`);
       setDeleting(false);
     } catch (error) {
       console.error('Error deleting games:', error);
@@ -87,7 +86,7 @@ function Admin() {
         <div style={{ marginTop: '2rem', marginBottom: '2rem' }}>
           <h2>Database Management</h2>
           <p style={{ color: '#ff9800', marginBottom: '1rem' }}>
-            ⚠️ Warning: This will delete ALL active games from the database.
+            Warning: This will delete ALL active games from the database.
           </p>
 
           <button

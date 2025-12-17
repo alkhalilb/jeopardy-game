@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { collection, query, where, onSnapshot, updateDoc, doc, runTransaction } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { joinGame, leaveGame, onGameUpdate, onGameDeleted, updateGame, buzzIn } from '../../api';
 
 function StudentGame() {
   const { gameId } = useParams();
   const [game, setGame] = useState(null);
-  const [gameDoc, setGameDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [playerName] = useState(sessionStorage.getItem('playerName'));
   const [playerTeam, setPlayerTeam] = useState(sessionStorage.getItem('playerTeam'));
@@ -20,24 +18,30 @@ function StudentGame() {
   const [finalAnswerSubmitted, setFinalAnswerSubmitted] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'games'), where('gameId', '==', gameId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docData = snapshot.docs[0];
-        setGameDoc(docData.id);
-        setGame(docData.data());
-        setLoading(false);
+    joinGame(gameId);
 
-        // Reset wager when question changes
-        const currentQ = docData.data().currentQuestion;
-        if (!currentQ || !currentQ.isDailyDouble) {
-          setWagerSubmitted(false);
-          setWager('');
-        }
+    const unsubscribeUpdate = onGameUpdate((gameState) => {
+      setGame(gameState);
+      setLoading(false);
+
+      // Reset wager when question changes
+      const currentQ = gameState.currentQuestion;
+      if (!currentQ || !currentQ.isDailyDouble) {
+        setWagerSubmitted(false);
+        setWager('');
       }
     });
 
-    return () => unsubscribe();
+    const unsubscribeDelete = onGameDeleted(() => {
+      setGame(null);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribeUpdate();
+      unsubscribeDelete();
+      leaveGame(gameId);
+    };
   }, [gameId]);
 
   // Auto-populate wager when a teammate confirms
@@ -47,17 +51,13 @@ function StudentGame() {
     const playerKey = `${playerTeam}-${playerName}`;
     const wagers = game.dailyDoubleWagers;
 
-    // Check if this player already has a wager in Firebase
     if (wagers[playerKey]) {
-      // Update local state to match Firebase
       setWager(wagers[playerKey].amount.toString());
     } else {
-      // Check if any teammate has confirmed a wager
       const teamWagers = Object.entries(wagers).filter(([key]) => key.startsWith(`${playerTeam}-`));
       const confirmedWager = teamWagers.find(([_, data]) => data.confirmed);
 
       if (confirmedWager) {
-        // Auto-populate with the confirmed wager amount
         setWager(confirmedWager[1].amount.toString());
       }
     }
@@ -70,17 +70,13 @@ function StudentGame() {
     const playerKey = `${playerTeam}-${playerName}`;
     const answers = game.finalJeopardyAnswers;
 
-    // Check if this player already has an answer in Firebase
     if (answers[playerKey]) {
-      // Update local state to match Firebase
       setFinalJeopardyAnswer(answers[playerKey].answer);
     } else {
-      // Check if any teammate has confirmed an answer
       const teamAnswers = Object.entries(answers).filter(([key]) => key.startsWith(`${playerTeam}-`));
       const confirmedAnswer = teamAnswers.find(([_, data]) => data.confirmed);
 
       if (confirmedAnswer) {
-        // Auto-populate with the confirmed answer
         setFinalJeopardyAnswer(confirmedAnswer[1].answer);
       }
     }
@@ -89,46 +85,14 @@ function StudentGame() {
   const handleBuzzIn = async () => {
     if (!game.buzzesOpen || game.buzzedPlayer) return;
 
-    // Check if this team has already gotten this question wrong
     const incorrectTeams = game.incorrectTeams || [];
     if (incorrectTeams.includes(playerTeam)) {
       alert('Your team has already attempted this question incorrectly.');
       return;
     }
 
-    const gameRef = doc(db, 'games', gameDoc);
-
-    // Use transaction to prevent race conditions - only first buzz-in wins
     try {
-      await runTransaction(db, async (transaction) => {
-        const gameSnapshot = await transaction.get(gameRef);
-
-        if (!gameSnapshot.exists()) {
-          throw new Error('Game does not exist');
-        }
-
-        const gameData = gameSnapshot.data();
-
-        // Check if someone has already buzzed in (race condition check)
-        if (gameData.buzzedPlayer) {
-          // Someone already buzzed - do nothing
-          return;
-        }
-
-        // Check if buzzes are still open
-        if (!gameData.buzzesOpen) {
-          return;
-        }
-
-        // We're first! Set the buzzedPlayer
-        transaction.update(gameRef, {
-          buzzedPlayer: {
-            name: playerName,
-            team: playerTeam,
-            timestamp: new Date()
-          }
-        });
-      });
+      await buzzIn(gameId, playerName, playerTeam);
     } catch (error) {
       console.error('Error buzzing in:', error);
     }
@@ -137,32 +101,26 @@ function StudentGame() {
   const handleWagerChange = async (newWager) => {
     setWager(newWager);
 
-    // Auto-unconfirm if wager is edited
-    const gameRef = doc(db, 'games', gameDoc);
     const wagers = game.dailyDoubleWagers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
     if (wagers[playerKey]?.confirmed) {
-      // Reset confirmation if editing after confirmation
       wagers[playerKey] = { amount: parseInt(newWager), confirmed: false };
 
-      // Also reset confirmations of other team members
       Object.keys(wagers).forEach(key => {
         if (key.startsWith(`${playerTeam}-`)) {
           wagers[key].confirmed = false;
         }
       });
 
-      await updateDoc(gameRef, {
-        dailyDoubleWagers: wagers
-      });
+      await updateGame(gameId, { dailyDoubleWagers: wagers });
     }
   };
 
   const handleWagerSubmit = async () => {
     const wagerAmount = parseInt(wager);
     const teamScore = game.teams[playerTeam] || 0;
-    const maxWager = Math.max(teamScore, 1000); // Team score OR $1000, whichever is HIGHER
+    const maxWager = Math.max(teamScore, 1000);
 
     if (isNaN(wagerAmount) || wagerAmount <= 0) {
       alert('Please enter a valid wager amount');
@@ -174,12 +132,9 @@ function StudentGame() {
       return;
     }
 
-    // Store wager with confirmation status
-    const gameRef = doc(db, 'games', gameDoc);
     const wagers = game.dailyDoubleWagers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
-    // Check if all team members have same wager amount
     const teamWagers = Object.entries(wagers).filter(([key]) => key.startsWith(`${playerTeam}-`));
     const existingWager = teamWagers.find(([_, data]) => data.amount !== wagerAmount);
 
@@ -190,22 +145,18 @@ function StudentGame() {
 
     wagers[playerKey] = { amount: wagerAmount, confirmed: true };
 
-    // Auto-populate this wager amount to other team members
     Object.keys(wagers).forEach(key => {
       if (key.startsWith(`${playerTeam}-`) && key !== playerKey && !wagers[key].confirmed) {
         wagers[key] = { amount: wagerAmount, confirmed: false };
       }
     });
 
-    // Check if all team members on this team have confirmed
-    const allTeamMembers = Object.keys(game.teams).includes(playerTeam);
     const teamConfirmed = Object.entries(wagers)
       .filter(([key]) => key.startsWith(`${playerTeam}-`))
       .every(([_, data]) => data.confirmed && data.amount === wagerAmount);
 
     const updateData = { dailyDoubleWagers: wagers };
 
-    // If all team members confirmed, set the wager amount on the question
     if (teamConfirmed) {
       updateData.currentQuestion = {
         ...game.currentQuestion,
@@ -213,22 +164,17 @@ function StudentGame() {
       };
     }
 
-    await updateDoc(gameRef, updateData);
+    await updateGame(gameId, updateData);
     setWagerSubmitted(true);
   };
 
   const handleUnconfirmWager = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
     const wagers = game.dailyDoubleWagers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
     if (wagers[playerKey]) {
       wagers[playerKey] = { ...wagers[playerKey], confirmed: false };
-
-      await updateDoc(gameRef, {
-        dailyDoubleWagers: wagers
-      });
-
+      await updateGame(gameId, { dailyDoubleWagers: wagers });
       setWagerSubmitted(false);
     }
   };
@@ -247,49 +193,35 @@ function StudentGame() {
       return;
     }
 
-    // Store wager in game state - only one wager per team
-    const gameRef = doc(db, 'games', gameDoc);
     const wagers = game.finalJeopardyWagers || {};
-
-    // Check if team already has a wager
     const existingWager = wagers[playerTeam];
     if (existingWager && existingWager !== wagerAmount) {
-      // Team members need to agree - show current wager
       alert(`Your team has a pending wager of $${existingWager}. All team members must enter the same amount.`);
       return;
     }
 
     wagers[playerTeam] = wagerAmount;
 
-    await updateDoc(gameRef, {
-      finalJeopardyWagers: wagers
-    });
-
+    await updateGame(gameId, { finalJeopardyWagers: wagers });
     setFinalWagerSubmitted(true);
   };
 
   const handleFinalJeopardyAnswerChange = async (newAnswer) => {
     setFinalJeopardyAnswer(newAnswer);
 
-    // Auto-unconfirm if answer is edited after confirmation
-    const gameRef = doc(db, 'games', gameDoc);
     const answers = game.finalJeopardyAnswers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
     if (answers[playerKey]?.confirmed) {
-      // Reset confirmation if editing after confirmation
       answers[playerKey] = { answer: newAnswer, confirmed: false };
 
-      // Also reset confirmations of other team members
       Object.keys(answers).forEach(key => {
         if (key.startsWith(`${playerTeam}-`)) {
           answers[key].confirmed = false;
         }
       });
 
-      await updateDoc(gameRef, {
-        finalJeopardyAnswers: answers
-      });
+      await updateGame(gameId, { finalJeopardyAnswers: answers });
     }
   };
 
@@ -299,11 +231,9 @@ function StudentGame() {
       return;
     }
 
-    const gameRef = doc(db, 'games', gameDoc);
     const answers = game.finalJeopardyAnswers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
-    // Check if all team members have same answer
     const teamAnswers = Object.entries(answers).filter(([key]) => key.startsWith(`${playerTeam}-`));
     const existingAnswer = teamAnswers.find(([_, data]) => data.answer !== finalJeopardyAnswer.trim());
 
@@ -314,43 +244,35 @@ function StudentGame() {
 
     answers[playerKey] = { answer: finalJeopardyAnswer.trim(), confirmed: true };
 
-    // Auto-populate this answer to other team members
     Object.keys(answers).forEach(key => {
       if (key.startsWith(`${playerTeam}-`) && key !== playerKey && !answers[key].confirmed) {
         answers[key] = { answer: finalJeopardyAnswer.trim(), confirmed: false };
       }
     });
 
-    // Check if all team members on this team have confirmed
     const teamConfirmed = Object.entries(answers)
       .filter(([key]) => key.startsWith(`${playerTeam}-`))
       .every(([_, data]) => data.confirmed && data.answer === finalJeopardyAnswer.trim());
 
     const updateData = { finalJeopardyAnswers: answers };
 
-    // If all team members confirmed, set the answer for the team
     if (teamConfirmed) {
       const teamFinalAnswers = game.finalJeopardyTeamAnswers || {};
       teamFinalAnswers[playerTeam] = finalJeopardyAnswer.trim();
       updateData.finalJeopardyTeamAnswers = teamFinalAnswers;
     }
 
-    await updateDoc(gameRef, updateData);
+    await updateGame(gameId, updateData);
     setFinalAnswerSubmitted(true);
   };
 
   const handleUnconfirmFinalAnswer = async () => {
-    const gameRef = doc(db, 'games', gameDoc);
     const answers = game.finalJeopardyAnswers || {};
     const playerKey = `${playerTeam}-${playerName}`;
 
     if (answers[playerKey]) {
       answers[playerKey] = { ...answers[playerKey], confirmed: false };
-
-      await updateDoc(gameRef, {
-        finalJeopardyAnswers: answers
-      });
-
+      await updateGame(gameId, { finalJeopardyAnswers: answers });
       setFinalAnswerSubmitted(false);
     }
   };
@@ -366,50 +288,40 @@ function StudentGame() {
       return;
     }
 
-    const gameRef = doc(db, 'games', gameDoc);
     const oldTeam = playerTeam;
     const newTeam = newTeamName.trim();
 
-    // Update teams object
     const teams = { ...game.teams };
 
-    // Add new team if it doesn't exist
     if (!teams[newTeam]) {
       teams[newTeam] = 0;
     }
 
-    // Check if old team has other members
     const playerKey = `${oldTeam}-${playerName}`;
     const dailyDoubleWagers = game.dailyDoubleWagers || {};
     const finalJeopardyAnswers = game.finalJeopardyAnswers || {};
 
-    // Check all keys for team members
     const oldTeamMembers = [
       ...Object.keys(dailyDoubleWagers).filter(key => key.startsWith(`${oldTeam}-`) && key !== playerKey),
       ...Object.keys(finalJeopardyAnswers).filter(key => key.startsWith(`${oldTeam}-`) && key !== playerKey)
     ];
 
-    // If no other members, delete the old team
     if (oldTeamMembers.length === 0) {
       delete teams[oldTeam];
     }
 
-    // Clean up player's data from old team in daily double wagers
     const updatedDailyDoubleWagers = { ...dailyDoubleWagers };
     delete updatedDailyDoubleWagers[playerKey];
 
-    // Clean up player's data from old team in final jeopardy answers
     const updatedFinalJeopardyAnswers = { ...finalJeopardyAnswers };
     delete updatedFinalJeopardyAnswers[playerKey];
 
-    // Update Firebase
-    await updateDoc(gameRef, {
+    await updateGame(gameId, {
       teams,
       dailyDoubleWagers: updatedDailyDoubleWagers,
       finalJeopardyAnswers: updatedFinalJeopardyAnswers
     });
 
-    // Update sessionStorage and local state
     sessionStorage.setItem('playerTeam', newTeam);
     setPlayerTeam(newTeam);
     setShowTeamChange(false);
@@ -430,7 +342,6 @@ function StudentGame() {
     return <div className="error">Game not found</div>;
   }
 
-  // Show winners screen if game has ended
   if (game.gameEnded) {
     return (
       <div className="game-container">
@@ -440,7 +351,7 @@ function StudentGame() {
           </h1>
 
           <h2 style={{ fontSize: '2.5rem', marginBottom: '2rem' }}>
-            🏆 {game.winners.length > 1 ? 'Winners' : 'Winner'} 🏆
+            {game.winners.length > 1 ? 'Winners' : 'Winner'}
           </h2>
 
           <div style={{ fontSize: '2rem', marginBottom: '3rem', fontWeight: 'bold' }}>
@@ -471,7 +382,7 @@ function StudentGame() {
 
           {game.winners.includes(playerTeam) && (
             <div style={{ fontSize: '2rem', marginTop: '2rem', color: '#ffcc00' }}>
-              🎉 Congratulations! 🎉
+              Congratulations!
             </div>
           )}
         </div>
@@ -485,14 +396,12 @@ function StudentGame() {
   const teamAlreadyIncorrect = incorrectTeams.includes(playerTeam);
   const isDailyDouble = currentQuestion && currentQuestion.isDailyDouble;
 
-  // For Daily Doubles, only the selected team can buzz
   const canBuzzDailyDouble = isDailyDouble && game.dailyDoubleTeam === playerTeam;
   const canBuzz = currentQuestion && game.buzzesOpen && !buzzedPlayer && !teamAlreadyIncorrect &&
     (!isDailyDouble || canBuzzDailyDouble);
 
   const teamScore = game.teams[playerTeam] || 0;
 
-  // Organize questions by category for display
   const boardQuestions = {};
   game.categories.forEach(cat => {
     boardQuestions[cat] = game.questions.filter(q => q.category === cat);
@@ -617,7 +526,7 @@ function StudentGame() {
                     .filter(([key]) => key.startsWith(`${playerTeam}-`))
                     .map(([key, data]) => (
                       <div key={key} style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>
-                        {key.split('-')[1]}: "{data.answer}" {data.confirmed ? '✓ Confirmed' : '(Pending)'}
+                        {key.split('-')[1]}: "{data.answer}" {data.confirmed ? 'Confirmed' : '(Pending)'}
                       </div>
                     ))}
 
@@ -727,7 +636,7 @@ function StudentGame() {
                 .filter(([key]) => key.startsWith(`${playerTeam}-`))
                 .map(([key, data]) => (
                   <div key={key} style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>
-                    {key.split('-')[1]}: ${data.amount} {data.confirmed ? '✓ Confirmed' : '(Pending)'}
+                    {key.split('-')[1]}: ${data.amount} {data.confirmed ? 'Confirmed' : '(Pending)'}
                   </div>
                 ))}
 
@@ -793,7 +702,7 @@ function StudentGame() {
                   textAlign: 'center',
                   border: '2px solid #ff0000'
                 }}>
-                  ⚠️ Your team cannot buzz - already attempted incorrectly
+                  Your team cannot buzz - already attempted incorrectly
                 </div>
               )}
 
@@ -801,7 +710,7 @@ function StudentGame() {
 
               {buzzedPlayer && (
                 <div className="buzz-info">
-                  <div>🔔 BUZZED IN!</div>
+                  <div>BUZZED IN!</div>
                   <div className="player-name">{buzzedPlayer.name}</div>
                   <div className="team-name">Team: {buzzedPlayer.team}</div>
                 </div>
@@ -857,7 +766,7 @@ function StudentGame() {
               Current Team: <strong>{playerTeam}</strong>
             </p>
             <p style={{ marginBottom: '1rem', color: '#ffaa00', fontSize: '0.9rem' }}>
-              ⚠️ Changing teams will reset your wagers and answers for this round.
+              Changing teams will reset your wagers and answers for this round.
             </p>
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', color: 'white' }}>

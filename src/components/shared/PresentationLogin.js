@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { getGame } from '../../api';
 
 function PresentationLogin() {
   const [gameId, setGameId] = useState('');
@@ -21,11 +20,9 @@ function PresentationLogin() {
     setError('');
 
     try {
-      // Verify the game exists
-      const q = query(collection(db, 'games'), where('gameId', '==', gameId.toUpperCase()));
-      const snapshot = await getDocs(q);
+      const game = await getGame(gameId.toUpperCase());
 
-      if (snapshot.empty) {
+      if (!game) {
         setError('Game not found. Please check the Game ID.');
         setLoading(false);
         return;

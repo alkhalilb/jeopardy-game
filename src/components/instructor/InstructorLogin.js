@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { checkGameExists, createGame } from '../../api';
 
 function InstructorLogin() {
   const [file, setFile] = useState(null);
@@ -14,12 +13,6 @@ function InstructorLogin() {
 
   const generateGameId = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
-  };
-
-  const checkGameIdExists = async (gameId) => {
-    const q = query(collection(db, 'games'), where('gameId', '==', gameId.toUpperCase()));
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
   };
 
   const downloadTemplate = () => {
@@ -188,7 +181,7 @@ U.S. Presidents\tThis president was the first to live in the White House\tWho is
 
             // Check if custom ID already exists
             setProgressMessage('Checking game ID availability...');
-            const exists = await checkGameIdExists(gameId);
+            const exists = await checkGameExists(gameId);
             if (exists) {
               setError(`Game ID "${gameId}" is already in use. Please choose another ID.`);
               setLoading(false);
@@ -203,20 +196,12 @@ U.S. Presidents\tThis president was the first to live in the White House\tWho is
           setProgress(80);
           setProgressMessage('Creating game session...');
 
-          // Create game in Firestore
-          await addDoc(collection(db, 'games'), {
+          // Create game via API
+          await createGame({
             gameId,
             categories,
             questions,
-            finalJeopardy,
-            teams: {},
-            currentQuestion: null,
-            buzzedPlayer: null,
-            questionStartTime: null,
-            buzzesOpen: false,
-            isFinalJeopardy: false,
-            finalJeopardyWagers: {},
-            createdAt: new Date()
+            finalJeopardy
           });
 
           setProgress(100);
@@ -304,7 +289,7 @@ U.S. Presidents\tThis president was the first to live in the White House\tWho is
                 fontSize: '0.9rem'
               }}
             >
-              📥 Download Template
+              Download Template
             </button>
           </div>
           <div className="form-group">
